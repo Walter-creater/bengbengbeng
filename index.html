@@ -375,7 +375,34 @@ a { color: inherit; text-decoration: none; }
 }
 .flash.flipped { border-color: var(--brand-soft); }
 
-.flash-tag { position: absolute; top: 14px; left: 16px; display: flex; gap: 6px; }
+.flash-tag { position: absolute; top: 14px; left: 16px; right: 14px; display: flex; gap: 6px; align-items: center; }
+
+.star {
+  margin-left: auto; width: 28px; height: 24px; flex: none;
+  display: grid; place-items: center; border-radius: 8px;
+  font-size: 16px; line-height: 1; color: var(--faint);
+  transition: color .15s, transform .12s var(--spring);
+}
+.star.on { color: var(--amber); }
+.star:active { transform: scale(.88); }
+
+/* 生词本 / 错题本 */
+.nb-tabs { display: flex; gap: 8px; margin: 2px 0 12px; }
+.nb-tab {
+  flex: 1; height: 38px; border-radius: 11px; display: flex;
+  align-items: center; justify-content: center; gap: 6px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 600; color: var(--sub);
+}
+.nb-tab.on { background: var(--surface); color: var(--brand); border-color: var(--brand); box-shadow: var(--shadow-1); }
+.nb-tab i { font-style: normal; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--brand-soft); color: var(--brand); }
+.nb-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.nb-row:last-child { border-bottom: 0; }
+.nb-w { font-family: var(--serif); font-size: 16px; flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-w em { font-style: normal; font-family: var(--ui); font-size: 10px; color: var(--red); margin-left: 5px; }
+.nb-d { flex: 1; min-width: 0; font-size: 11.5px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-x { flex: none; width: 26px; height: 26px; border-radius: 8px; color: var(--faint); font-size: 16px; line-height: 1; }
+.nb-x:active { background: var(--red-soft); color: var(--red); }
 
 .word {
   font-family: var(--serif);
@@ -1240,6 +1267,9 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     remindTime: '20:00',
     cardScale: 1,       // 卡片字号倍率
     examDate: '',       // 考试日期 YYYY-MM-DD
+    longReview: true,   // 定期回顾很久以前学过的词
+    longEvery: 14,      // 多少天回顾一次
+    longSize: 20,       // 每次回顾多少个
     autoSync: true,
     createdAt: Date.now(),
   };
@@ -1256,6 +1286,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     rev: 0,             // 本地改动计数，用于增量同步判断
     syncedRev: -1,
     lastSync: 0,
+    longLast: 0,        // 上次「回顾旧词」的时间戳
   };
 
   /* ---------- 加载 / 保存 ---------- */
@@ -1286,6 +1317,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       state.rev = 0;
       state.syncedRev = typeof d.syncedRev === 'number' ? d.syncedRev : 0;
       state.lastSync = d.lastSync || 0;
+      state.longLast = Number(d.longLast) || 0;
       state.v = V;
     } catch (e) { }
   }
@@ -1305,6 +1337,8 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         r: Math.max(0, Math.round(num(c.r, 0))),
         l: Math.max(0, Math.round(num(c.l, 0))),
         seen: Math.max(0, Math.round(num(c.seen, 0))),
+        s: c.s ? 1 : 0,                                  // 收藏进生词本
+        x: Math.min(99, Math.max(0, Math.round(num(c.x, 0)))),  // 答错次数，错题本用
         u: Math.max(0, num(c.u, 0)),
       };
     });
@@ -1352,7 +1386,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     const src = state.words;
     for (const w in src) {
       const c = src[w];
-      if (c && (c.st > 0 || c.seen > 0)) out[w] = c;
+      if (c && (c.st > 0 || c.seen > 0 || c.s || c.x)) out[w] = c;
     }
     return out;
   }
@@ -1370,6 +1404,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       rev: state.rev,
       syncedRev: state.syncedRev,
       lastSync: state.lastSync,
+      longLast: state.longLast,
     };
   }
 
@@ -1758,6 +1793,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     state.lastList = null;
     state.lastSession = null;
     state.pending = null;
+    state.longLast = 0;
     dueAllCache = { t: 0, v: [] };
     touch();
     lastSnapDay = dayKey();   // 清空后别把空状态存成当日快照
@@ -1786,7 +1822,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     const src = slim || slimWords();
     for (const w in src) {
       const c = src[w];
-      out[w] = [c.st || 0, r1(c.e, 2), r1(c.i, 1), Math.round(c.d || 0), c.r || 0, c.l || 0, c.seen || 0, Math.round(c.u || 0)];
+      out[w] = [c.st || 0, r1(c.e, 2), r1(c.i, 1), Math.round(c.d || 0), c.r || 0, c.l || 0, c.seen || 0, Math.round(c.u || 0), c.s || 0, c.x || 0];
     }
     return out;
   }
@@ -1806,6 +1842,8 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         l: Math.max(0, Math.round(Number(a[5]) || 0)),
         seen: Math.max(0, Math.round(Number(a[6]) || 0)),
         u: Math.max(0, Number(a[7]) || 0),
+        s: a[8] ? 1 : 0,
+        x: Math.min(99, Math.max(0, Math.round(Number(a[9]) || 0))),
       };
     }
     return out;
@@ -1898,6 +1936,99 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     return state.rev !== state.syncedRev;
   }
 
+  /* ---------- 生词本 / 错题本 ---------- */
+  function ensureCard(w) {
+    if (!state.words[w]) {
+      state.words[w] = { st: 0, e: 2.5, i: 0, d: 0, r: 0, l: 0, seen: 0, s: 0, x: 0, u: 0 };
+    }
+    return state.words[w];
+  }
+
+  // 收藏 / 取消收藏，返回收藏后的状态
+  function star(w) {
+    if (!w || !recOf(w)) return false;
+    const c = ensureCard(w);
+    c.s = c.s ? 0 : 1;
+    touch();
+    save();
+    return !!c.s;
+  }
+
+  function isStarred(w) {
+    const c = state.words[w];
+    return !!(c && c.s);
+  }
+
+  // 答错一次记一笔，错题本按次数排序
+  function markWrong(w) {
+    if (!w || !recOf(w)) return;
+    const c = ensureCard(w);
+    c.x = Math.min(99, (c.x || 0) + 1);
+    touch();
+  }
+
+  function starredWords() {
+    const out = [];
+    const W = WORDS();
+    for (let i = 0; i < W.length; i++) {
+      const c = state.words[W[i][0]];
+      if (c && c.s) out.push(W[i][0]);
+    }
+    return out;
+  }
+
+  function wrongWords() {
+    const out = [];
+    const W = WORDS();
+    for (let i = 0; i < W.length; i++) {
+      const c = state.words[W[i][0]];
+      if (c && c.x > 0) out.push({ w: W[i][0], x: c.x });
+    }
+    out.sort((a, b) => b.x - a.x);
+    return out.map((o) => o.w);
+  }
+
+  /* ---------- 定期回顾旧词 ---------- */
+  // 候选：已掌握、或者间隔已经拉到 21 天以上；还没到期的（到期走日常复习）
+  function longCandidates() {
+    const now = Date.now();
+    const W = WORDS();
+    const out = [];
+    for (let i = 0; i < W.length; i++) {
+      const w = W[i][0];
+      const c = state.words[w];
+      if (!c || c.st < 2) continue;
+      if (c.st !== 3 && (c.i || 0) < 21) continue;
+      if (c.d && c.d <= now) continue;
+      out.push({ w: w, u: c.u || 0 });
+    }
+    out.sort((a, b) => a.u - b.u);   // 最久没看过的排前面
+    return out.map((o) => o.w);
+  }
+
+  // 该不该提醒：开关开着 + 距上次够久 + 有候选词
+  function longDue() {
+    const st = state.settings;
+    if (!st.longReview) return [];
+    const every = Math.max(1, Number(st.longEvery) || 14) * DAY;
+    const size = Math.max(1, Math.min(100, Number(st.longSize) || 20));
+    const last = state.longLast || 0;
+    // 从没用过：用满一个周期之后才开始提醒，别一上来就弹
+    if (!last) {
+      const born = Number(st.createdAt) || 0;
+      if (born && Date.now() - born < every) return [];
+    } else if (Date.now() - last < every) {
+      return [];
+    }
+    return longCandidates().slice(0, size);
+  }
+
+  function markLongReview() {
+    state.longLast = Date.now();
+    touch();
+    saveNow();
+  }
+
   window.BBB = {
     V, DAY, MIN, state, load, save, saveNow, payload, dayKey, log, card, statusOf,
     grade, predict, apply, intervalLabel, touch, installFlush,
@@ -1905,6 +2036,8 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     newWords, dueWords, dueWordsAll, counts, groupStats, todayCounts, streak, examInfo, reset,
     setPending, clearPending,
     encode, decode, mergeRemote, markSynced, needsSync, slimWords,
+    star, isStarred, starredWords, wrongWords, markWrong,
+    longCandidates, longDue, markLongReview,
     makeSnapshot, listSnapshots, restoreSnapshot,
   };
 })();
@@ -2343,6 +2476,14 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     else location.hash = '#/study';
   }
 
+  // 定期回顾：把很久以前学过、还没到期复习的词捞出来过一遍
+  function startLongReview() {
+    const list = B.longDue();
+    if (!list.length) { toast('暂时没有需要回顾的词'); return; }
+    B.markLongReview();      // 先记时间，避免关掉页面后又弹一次
+    startReviewQuiz(list, { book: B.state.settings.book, title: '旧词回顾' });
+  }
+
   function resumeSession() {
     const p = B.state.pending;
     if (!p) return false;
@@ -2479,7 +2620,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     const c0 = B.state.words[w];
     const wasNew = !c0 || c0.st === 0;
     B.grade(w, q);
-    if (q === 0) S.stat.again++;
+    if (q === 0) { S.stat.again++; B.markWrong(w); }   // 标记「忘记」→ 进错题本
     else if (q === 1) S.stat.hard++;
     else S.stat.good++;
     if (wasNew) S.stat.fresh++;
@@ -2537,6 +2678,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     const streak = B.streak();
     const exam = B.examInfo();
     const pending = B.state.pending;
+    const longN = B.longDue().length;
 
     const tomorrow = countDueWithin(86400000);
     const later = countDueWithin(86400000 * 2) - tomorrow;
@@ -2602,6 +2744,15 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
              <button class="btn btn-primary ghost" data-act="books">去选下一组 List</button>`}
         ${dueAll > dueToday ? `<div class="task-note">今日复习上限 ${st.dailyReview} 个，还有 ${dueAll - dueToday} 个排到后面（可在设置里调整）</div>` : ''}
       </div>
+
+      ${longN ? `<div class="card tight resume-card" data-act="long">
+        <div class="resume-ic">↺</div>
+        <div class="lc-body">
+          <div class="lc-t">该回顾旧词了</div>
+          <div class="lc-s">${longN} 个很久没见的词，过一遍不容易忘</div>
+        </div>
+        <span class="resume-go">开始</span>
+      </div>` : ''}
 
       <div class="card tight">
         <div class="quick-head"><b>随手记</b><span>课间几分钟，能记几个是几个</span></div>
@@ -3201,6 +3352,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
             ${isNew ? '<span class="pill brand">新词</span>' : '<span class="pill green">复习</span>'}
             ${c.st === 3 ? '<span class="pill">已掌握</span>' : ''}
             ${r[7] >= 4 ? '<span class="pill">高频</span>' : ''}
+            <button class="star ${B.isStarred(word) ? 'on' : ''}" data-act="star" data-word="${esc(word)}" aria-label="收藏到生词本">${B.isStarred(word) ? '★' : '☆'}</button>
           </div>
 
           <div class="word ${hidden ? 'hide' : ''}">${esc(word)}</div>
@@ -3490,6 +3642,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       q.stat.ok++;
     } else {
       q.stat.bad++;
+      B.markWrong(w);                                 // 答错 → 进错题本
       q.wrong[w] = (q.wrong[w] || 0) + 1;
       const cap = q.kind === 'review' ? 2 : 99;
       if (q.ask[w] < cap) q.queue.push(w);   // 不会的排到本轮末尾，再来一次
@@ -3781,6 +3934,43 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     return n;
   }
 
+  /* ---------------- 生词本 / 错题本 ---------------- */
+  const NB = { tab: 'star' };
+
+  function viewNotebook() {
+    const starred = B.starredWords();
+    const wrong = B.wrongWords();
+    const list = NB.tab === 'star' ? starred : wrong;
+    const tab = (k, label, n) => `<button class="nb-tab ${NB.tab === k ? 'on' : ''}" data-nb="${k}">${label}<i>${n}</i></button>`;
+
+    const rows = list.slice(0, 400).map((w) => {
+      const r = B.recOf(w);
+      const c = B.state.words[w] || {};
+      return `<div class="nb-row" data-peek="${esc(w)}">
+        <div class="nb-w">${esc(w)}${c.x ? `<em>错 ${c.x}</em>` : ''}</div>
+        <div class="nb-d">${esc(r ? defText(r) : '')}</div>
+        <button class="nb-x" data-nb-del="${esc(w)}" aria-label="从列表移除">×</button>
+      </div>`;
+    }).join('');
+
+    return `
+      <div class="topbar"><div class="brand"><b>生词本</b><span>收藏与错题</span></div></div>
+
+      <div class="nb-tabs">
+        ${tab('star', '生词本', starred.length)}
+        ${tab('wrong', '错题本', wrong.length)}
+      </div>
+
+      ${list.length
+        ? `<div class="card tight" style="padding:4px 14px">${rows}</div>
+           <button class="btn btn-primary" style="width:100%;margin-top:14px" data-nb-start="1">刷这 ${list.length} 个词</button>
+           <div class="set-note" style="text-align:center;margin-top:10px">四选一快速过一遍，答错的会留在错题本里</div>`
+        : `<div class="card tight"><div class="empty" style="padding:30px 0;line-height:1.9">${NB.tab === 'star'
+          ? '生词本还是空的。<br/>背词时点卡片右上角的 ☆ ，就能把词存进来'
+          : '错题本还是空的。<br/>答错或标「忘记」的词会自动进来'}</div></div>`}
+    `;
+  }
+
   /* ---------------- 进度 ---------------- */
   function viewStats() {
     const c = B.counts();
@@ -4005,6 +4195,18 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
           <div><div class="r-lb">每天复习上限</div><div class="r-sub">超出的词自动顺延到明天</div></div>
           <div class="seg-mini">${seg([[50, '50'], [100, '100'], [200, '200'], [0, '不限']], st.dailyReview, 'review')}</div>
         </div>
+        <div class="row">
+          <div><div class="r-lb">定期回顾旧词</div><div class="r-sub">隔一段时间，把很久以前学过、已经排到未来的词再捞出来过一遍，防止忘干净</div></div>
+          ${sw('toggle-long', st.longReview)}
+        </div>
+        ${st.longReview ? `<div class="row">
+          <div><div class="r-lb">回顾间隔</div><div class="r-sub">距上次回顾超过这么久，首页就提醒</div></div>
+          <div class="seg-mini">${seg([[7, '7 天'], [14, '14 天'], [30, '30 天']], st.longEvery, 'longevery')}</div>
+        </div>
+        <div class="row">
+          <div><div class="r-lb">每次回顾</div><div class="r-sub">一轮抽多少个词</div></div>
+          <div class="seg-mini">${seg([[10, '10'], [20, '20'], [30, '30']], st.longSize, 'longsize')}</div>
+        </div>` : ''}
         <div class="row col">
           <div class="r-lb">考试日期</div>
           <div class="r-sub" style="margin-bottom:8px">首页会显示倒计时和每天需要背多少词</div>
@@ -4283,6 +4485,11 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       </div>` : '<div class="card tight" style="margin-top:10px"><div class="empty" style="padding:18px 0">还没有背词记录，去「词书」选一组开始</div></div>'}
 
       <div class="card tight" style="margin-top:10px">
+        <div class="lib-row" data-go="notebook">
+          <div class="lib-mark">词</div>
+          <div class="lib-info"><div class="n">生词本 · 错题本<span class="r-sub" style="display:block;font-size:11px;color:var(--faint)">收藏 ${B.starredWords().length} 个 · 错题 ${B.wrongWords().length} 个</span></div></div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>
+        </div>
         <div class="lib-row" data-go="settings">
           <div class="lib-mark">设</div>
           <div class="lib-info"><div class="n">学习设置<span class="r-sub" style="display:block;font-size:11px;color:var(--faint)">每日词量 · 卡片显示 · 发音</span></div></div>
@@ -4469,6 +4676,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     else if (r === 'books') html = viewBooks();
     else if (r === 'stats') html = viewStats();
     else if (r === 'me') html = viewMe();
+    else if (r === 'notebook') html = viewNotebook();
     else if (r === 'settings') html = viewSettings();
     else html = viewHome();
 
@@ -4539,6 +4747,28 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
 
     if (t.closest('[data-noflip]')) return;
 
+    // 生词本 / 错题本（必须排在 data-peek 之前，行内还有移除按钮）
+    const nbt = t.closest('[data-nb]');
+    if (nbt) { NB.tab = nbt.getAttribute('data-nb'); render(); return; }
+
+    const nbdel = t.closest('[data-nb-del]');
+    if (nbdel) {
+      const w = nbdel.getAttribute('data-nb-del');
+      if (NB.tab === 'star') B.star(w);
+      else if (B.state.words[w]) { B.state.words[w].x = 0; B.touch(); B.save(); }
+      render();
+      return;
+    }
+
+    const nbs = t.closest('[data-nb-start]');
+    if (nbs) {
+      const list = NB.tab === 'star' ? B.starredWords() : B.wrongWords();
+      if (!list.length) return;
+      const take = list.slice(0, 100);
+      startReviewQuiz(take, { book: B.state.settings.book, title: NB.tab === 'star' ? '生词本' : '错题本' });
+      return;
+    }
+
     const qk = t.closest('[data-quick]');
     if (qk) { startQuick(parseInt(qk.getAttribute('data-quick'), 10)); return; }
 
@@ -4568,6 +4798,20 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       const st = B.state.settings;
       if (act === 'daily') { startDaily(); return; }
       if (act === 'daily-n') { startDaily(null, parseInt(actEl.getAttribute('data-n'), 10)); return; }
+      if (act === 'star') {
+        const sw = actEl.getAttribute('data-word');
+        toast(B.star(sw) ? '已加入生词本' : '已移出生词本');
+        render();
+        return;
+      }
+      if (act === 'long') { startLongReview(); return; }
+      if (act === 'toggle-long') {
+        st.longReview = !st.longReview;
+        B.touch(); B.save();
+        toast(st.longReview ? '已开启定期回顾旧词' : '已关闭定期回顾');
+        render();
+        return;
+      }
       if (act === 'only-review') { openReviewSheet(); return; }
       if (act === 'books') { location.hash = '#/books'; return; }
       if (act === 'continuelist') {
@@ -4709,6 +4953,12 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
 
     const rv = t.closest('[data-review]');
     if (rv) { B.state.settings.dailyReview = parseInt(rv.getAttribute('data-review'), 10); B.touch(); B.save(); render(); return; }
+
+    const le = t.closest('[data-longevery]');
+    if (le) { B.state.settings.longEvery = parseInt(le.getAttribute('data-longevery'), 10); B.touch(); B.save(); render(); return; }
+
+    const ln = t.closest('[data-longsize]');
+    if (ln) { B.state.settings.longSize = parseInt(ln.getAttribute('data-longsize'), 10); B.touch(); B.save(); render(); return; }
 
     const sc = t.closest('[data-scale]');
     if (sc) { B.state.settings.cardScale = parseFloat(sc.getAttribute('data-scale')) || 1; B.touch(); B.save(); applyScale(); render(); return; }
