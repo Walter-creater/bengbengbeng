@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
-<title>bengbengbeng · 蹦蹦蹦记词</title>
+<title>bengbengbeng · 绷绷绷单词</title>
 <meta name="description" content="大学四级 / 托福 / SAT 单词，按艾宾浩斯记忆曲线安排复习，标注音标与词典真人发音。" />
 <meta name="theme-color" content="#F2F4F9" />
 <style>
-/* bengbengbeng · 蹦蹦蹦记词 */
+/* bengbengbeng · 绷绷绷单词 */
 :root {
   --paper: #FFFFFF;
   --ink: #1F2530;
@@ -294,6 +294,18 @@ a { color: inherit; text-decoration: none; }
 .quick-chips button:active { transform: scale(.97); }
 .quick-chips button b { font-family: var(--serif); font-size: 16px; font-weight: 600; color: var(--brand); line-height: 1.1; }
 .quick-chips button small { font-size: 10.5px; color: var(--faint); font-weight: 500; }
+
+/* 今日任务：临时改本次数量（只影响这一次，不动每日目标） */
+.count-row { display: flex; align-items: center; gap: 7px; margin-top: 11px; }
+.count-row > span { font-size: 11.5px; color: var(--faint); margin-right: 1px; }
+.count-chip {
+  flex: 1; min-width: 0; height: 30px; border-radius: 9px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  font-size: 12px; font-weight: 600; color: var(--sub);
+  transition: transform .12s var(--spring), color .15s, border-color .15s;
+}
+.count-chip:hover { color: var(--brand); border-color: var(--brand); }
+.count-chip:active { transform: scale(.95); }
 
 /* 还没背过词：不画空图，给一句鼓励 + 三个小台阶 */
 .curve-empty { padding: 18px 16px 16px; }
@@ -1161,7 +1173,7 @@ a { color: inherit; text-decoration: none; }
 <body>
 <div class="app" id="app">
   <div class="topbar">
-    <div class="brand"><b>bengbengbeng</b><span>蹦蹦蹦记词</span></div>
+    <div class="brand"><b>bengbengbeng</b><span>绷绷绷单词</span></div>
   </div>
   <div class="card"><p style="color:var(--sub);margin:0;font-size:13px">正在装载词库…</p></div>
 </div>
@@ -2406,17 +2418,33 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     goStudy();
   }
 
-  function startDaily(only) {
+  // limit: 不传 = 今日任务；>0 = 本次只背 N 个；0 = 全部（复习部分不受今日上限约束）
+  // 自定义数量只作用于这一次会话，不写回 dailyNew / dailyReview
+  function startDaily(only, limit) {
     const st = B.state.settings;
     const tc = B.todayCounts();
     const newLeft = Math.max(0, st.dailyNew - tc.newDone);
-    const reviewLimit = Math.max(0, reviewCap() - tc.reviewDone);
+    let reviewLimit = Math.max(0, reviewCap() - tc.reviewDone);
 
     let due = B.dueWordsAll();
     let nw = B.newWords(newLeft);
     if (only === 'review') { nw = []; }
     else if (only === 'new') { due = []; }
-    due = due.slice(0, reviewLimit);
+
+    const custom = typeof limit === 'number' && isFinite(limit);
+    if (custom && limit === 0) {
+      // 全部：到期词一条不落，仍不动每日目标
+      reviewLimit = due.length;
+      const all = due.length + nw.length;
+      if (all > 300 && !confirm('这次要背 ' + all + ' 个词，确定吗？')) return;
+    } else if (custom) {
+      due = due.slice(0, Math.min(reviewLimit, limit));
+      const rest = limit - due.length;
+      nw = rest > 0 ? nw.slice(0, Math.min(nw.length, rest)) : [];
+      reviewLimit = due.length;
+    } else {
+      due = due.slice(0, reviewLimit);
+    }
 
     // 复习走四选一（百词斩式），新词跟在后面走三轮抽查
     if (due.length && st.reviewQuiz) {
@@ -2433,7 +2461,9 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     S.book = st.book;
     S.gi = -1;
     S.kind = only === 'review' ? 'review' : 'daily';
-    S.title = only === 'review' ? '今日复习' : '今日任务';
+    S.title = only === 'review' ? '今日复习'
+      : custom ? (limit === 0 ? '今日任务 · 全部' : '今日任务 · 只背 ' + limit + ' 个')
+        : '今日任务';
     resetSession();
     S.stat.reviewed = due.length;
     if (!S.queue.length) {
@@ -2519,7 +2549,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
 
     return `
       <div class="topbar">
-        <div class="brand"><b>bengbengbeng</b><span>蹦蹦蹦记词</span></div>
+        <div class="brand"><b>bengbengbeng</b><span>绷绷绷单词</span></div>
         <div style="display:flex;gap:8px;align-items:center">
           <button class="icon-btn" data-act="search" aria-label="搜索单词">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -2566,6 +2596,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         <div class="bar"><i style="width:${pct(tc.newDone, st.dailyNew)}%"></i></div>
         ${ready > 0
         ? `<button class="btn btn-primary" data-act="daily">${dueToday ? '开始复习 ' + dueToday + ' 个 + 新词 ' + newLeft + ' 个' : '开始背新词 ' + newLeft + ' 个'}</button>
+             <div class="count-row"><span>或只背</span>${[10, 20, 50, 0].map((n) => `<button class="count-chip" data-act="daily-n" data-n="${n}">${n || '全部'}</button>`).join('')}</div>
              <button class="btn btn-primary ghost" style="width:100%;margin-top:10px" data-act="only-review">复习 · 可选到期 / 不熟 / 全部</button>`
         : `<div style="text-align:center;padding:6px 0 10px;color:var(--green);font-size:13.5px;font-weight:600">今天的新词和复习都清空了 🎉</div>
              <button class="btn btn-primary ghost" data-act="books">去选下一组 List</button>`}
@@ -3914,7 +3945,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
   function remindKey() { return 'bbb:remind:' + B.dayKey(); }
   function updateTitle() {
     const d = B.dueWordsAll().length;
-    document.title = d > 0 ? '(' + d + ') 蹦蹦蹦记词' : 'bengbengbeng · 蹦蹦蹦记词';
+    document.title = d > 0 ? '(' + d + ') 绷绷绷单词' : 'bengbengbeng · 绷绷绷单词';
   }
   function checkRemind() {
     const st = B.state.settings;
@@ -3936,7 +3967,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     let ok = false;
     try {
       if (notiPerm() === 'granted') {
-        new Notification('蹦蹦蹦记词 · 该复习了', { body: line + '，按记忆曲线这会儿过一遍最划算。' });
+        new Notification('绷绷绷单词 · 该复习了', { body: line + '，按记忆曲线这会儿过一遍最划算。' });
         ok = true;
       }
     } catch (e) { ok = false; }
@@ -4119,7 +4150,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       </div>
 
       <div style="text-align:center;color:var(--faint);font-size:11px;line-height:1.8;margin-top:20px">
-        bengbengbeng · 蹦蹦蹦记词<br/>
+        bengbengbeng · 绷绷绷单词<br/>
         SAT ${B.book('sat').groups.length} 个 List · 四级 ${B.book('cet4').groups.length} 个 · 托福 ${B.book('toefl').groups.length} 个<br/>
         音标与释义来自词表与词典语料，发音为有道词典真人录音
       </div>`;
@@ -4167,7 +4198,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
   }
 
   function nativeShare() {
-    const data = { title: 'bengbengbeng · 蹦蹦蹦记词', text: '四级 / 托福 / SAT 背单词，按记忆曲线复习', url: shareUrl() };
+    const data = { title: 'bengbengbeng · 绷绷绷单词', text: '四级 / 托福 / SAT 背单词，按记忆曲线复习', url: shareUrl() };
     try {
       navigator.share(data).catch(() => { /* 用户取消，不打扰 */ });
     } catch (e) { copyText(shareUrl()); }
@@ -4536,6 +4567,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       const act = actEl.getAttribute('data-act');
       const st = B.state.settings;
       if (act === 'daily') { startDaily(); return; }
+      if (act === 'daily-n') { startDaily(null, parseInt(actEl.getAttribute('data-n'), 10)); return; }
       if (act === 'only-review') { openReviewSheet(); return; }
       if (act === 'books') { location.hash = '#/books'; return; }
       if (act === 'continuelist') {
@@ -4667,7 +4699,9 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       return;
     }
 
-    const th = t.closest('[data-theme]');
+    // 必须限定 button：[data-theme] 也挂在 <html> 上，用裸选择器会把页面里所有点击
+    // 都当成“切换主题”吞掉，导致下面的 data-new / data-review / data-size 全部失效
+    const th = t.closest('button[data-theme]');
     if (th) { B.state.settings.theme = th.getAttribute('data-theme'); B.touch(); B.save(); applyTheme(); render(); return; }
 
     const nw = t.closest('[data-new]');
@@ -4686,10 +4720,18 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     if (au) { B.state.settings.autoAudio = au.getAttribute('data-audio'); B.touch(); B.save(); render(); return; }
 
     const sz = t.closest('[data-size]');
-    if (sz) { B.state.settings.sessionSize = parseInt(sz.getAttribute('data-size'), 10); B.touch(); B.save(); render(); return; }
+    if (sz) {
+      B.state.settings.sessionSize = parseInt(sz.getAttribute('data-size'), 10);
+      PK.size = B.state.settings.sessionSize;   // 同步「选 List」弹窗的缓存，否则改了不生效
+      B.touch(); B.save(); render(); return;
+    }
 
     const od = t.closest('[data-order]');
-    if (od) { B.state.settings.order = od.getAttribute('data-order'); B.touch(); B.save(); render(); return; }
+    if (od) {
+      B.state.settings.order = od.getAttribute('data-order');
+      PK.order = B.state.settings.order;
+      B.touch(); B.save(); render(); return;
+    }
 
     const md = t.closest('[data-mode]');
     if (md) {
