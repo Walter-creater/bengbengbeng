@@ -6,6 +6,11 @@
 <title>bengbengbeng · 绷绷绷单词</title>
 <meta name="description" content="大学四级 / 托福 / SAT 单词，按艾宾浩斯记忆曲线安排复习，标注音标与词典真人发音。" />
 <meta name="theme-color" content="#F2F4F9" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="绷绷绷单词" />
 <style>
 /* bengbengbeng · 绷绷绷单词 */
 :root {
@@ -874,6 +879,11 @@ a { color: inherit; text-decoration: none; }
 .qz-fb-def { font-size: 13px; line-height: 1.75; color: var(--ink-2); margin-bottom: 9px; }
 .qz-fb .peek { margin: 0 0 8px; }
 
+/* 离线发音选择 */
+.ap-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.ap-row:last-child { border-bottom: 0; }
+.ap-t { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-n { flex: none; font-size: 11px; color: var(--faint); }
 /* 补释义 */
 .fill-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .fill-w { font-family: var(--serif); font-size: 15px; width: 40%; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4404,6 +4414,10 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
           <div><div class="r-lb">自动发音</div><div class="r-sub">${st.autoAudio === 'off' ? '只在点喇叭时发音' : st.autoAudio === 'always' ? '每个词一出现就发音' : '翻面 / 听写模式下自动读'}</div></div>
           <div class="seg-mini">${seg([['off', '关'], ['after', '翻面'], ['always', '总是']], st.autoAudio, 'audio')}</div>
         </div>
+        <div class="row">
+          <div><div class="r-lb">离线发音</div><div class="r-sub">${audioOfflineText()}</div></div>
+          <button class="pill brand" style="height:30px;padding:0 12px" data-act="offline-audio">下载</button>
+        </div>
       </div>
 
       <div class="sec-title"><h2>保存与备份</h2><span class="link">数据只在本机</span></div>
@@ -4940,6 +4954,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         location.reload();
         return;
       }
+      if (act === 'offline-audio') { openAudioPicker(); return; }
       if (act === 'feedback') { openFeedbackSheet(); return; }
       if (act === 'star') {
         const sw = actEl.getAttribute('data-word');
@@ -5350,7 +5365,169 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     });
   }
 
-  /* ---------------- 反馈 ---------------- */
+  /* ---------------- 离线发音 ---------------- */
+  const AUDIO_CACHE = 'bbb-audio-v1';
+  const AUDIO_IDX = 'bbb:audio-idx:v1';
+
+  function audioUrlOf(word, accent) {
+    return 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(word) + '&type=' + (accent === 'uk' ? 1 : 2);
+  }
+
+  function audioIdx() {
+    try { return JSON.parse(localStorage.getItem(AUDIO_IDX) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+
+  function audioIdxSave(o) {
+    try { localStorage.setItem(AUDIO_IDX, JSON.stringify(o)); } catch (e) { }
+  }
+
+  function audioCount() { return Object.keys(audioIdx()).length; }
+
+  function audioOfflineText() {
+    if (!('caches' in window)) return '这个浏览器不支持离线缓存';
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      return '要 https 打开才能用（直接双击本地文件不行）';
+    }
+    const n = audioCount();
+    return n ? '已缓存 ' + n + ' 个词的发音，可以继续按 List 下载' : '按 List 下载真人读音，断网也能听';
+  }
+
+  function openAudioPicker() {
+    if (!('caches' in window)) { toast('这个浏览器不支持离线缓存'); return; }
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      toast('要用 https 打开才能缓存，双击本地文件不行');
+      return;
+    }
+    const code = B.state.settings.book;
+    const bk = B.book(code);
+    const idx = audioIdx();
+    const accent = B.state.settings.accent === 'uk' ? 'uk' : 'us';
+    const rows = (bk.groups || []).map((g, gi) => {
+      const ws = g.w.map((i) => W()[i][0]);
+      let have = 0;
+      ws.forEach((w) => { if (idx[audioUrlOf(w, accent)]) have++; });
+      return { gi: gi, t: g.t, lv: g.lv || '', n: ws.length, have: have };
+    });
+
+    const mask = document.createElement('div');
+    mask.className = 'sheet-mask';
+    mask.innerHTML = `<div class="sheet">
+      <div class="grab"></div>
+      <h3 style="font-size:21px">下载发音</h3>
+      <div class="sheet-sub">${esc(bk.name)} · 勾选要离线的 List，之后断网也能听</div>
+      <div style="max-height:44vh;overflow:auto;margin:12px 0 4px">
+        ${rows.map((r) => `<label class="ap-row">
+          <input type="checkbox" data-ap-gi="${r.gi}" ${r.have >= r.n ? '' : ''} style="width:16px;height:16px;flex:none" />
+          <span class="ap-t">${esc(r.t)}</span>
+          <span class="ap-n">${r.n} 词${r.have ? ' · 已存 ' + r.have : ''}</span>
+        </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin:6px 0 12px">
+        <button class="btn btn-primary ghost" style="flex:1;height:36px;font-size:12.5px" data-ap-all="1">全选</button>
+        <button class="btn btn-primary ghost" style="flex:1;height:36px;font-size:12.5px" data-ap-none="1">清空</button>
+      </div>
+      <button class="btn btn-primary" style="width:100%" data-ap-go="1">开始下载</button>
+      <button class="btn btn-primary ghost" style="width:100%;margin-top:10px" data-ap-cancel="1">取消</button>
+    </div>`;
+    document.body.appendChild(mask);
+
+    const boxes = () => Array.prototype.slice.call(mask.querySelectorAll('[data-ap-gi]'));
+    const selected = () => boxes().filter((b) => b.checked);
+    const refresh = () => {
+      const n = selected().reduce((s, b) => s + rows[+b.getAttribute('data-ap-gi')].n, 0);
+      const btn = mask.querySelector('[data-ap-go]');
+      btn.textContent = n ? '下载 ' + n + ' 个词（约 ' + (n * 7 / 1024).toFixed(1) + 'MB）' : '先勾选 List';
+      btn.disabled = !n;
+    };
+
+    mask.addEventListener('change', refresh);
+    mask.addEventListener('click', (e) => {
+      if (e.target === mask) { mask.remove(); return; }
+      if (e.target.closest('[data-ap-cancel]')) { mask.remove(); return; }
+      if (e.target.closest('[data-ap-all]')) { boxes().forEach((b) => { b.checked = true; }); refresh(); return; }
+      if (e.target.closest('[data-ap-none]')) { boxes().forEach((b) => { b.checked = false; }); refresh(); return; }
+      if (e.target.closest('[data-ap-go]')) {
+        const pick = selected().map((b) => +b.getAttribute('data-ap-gi'));
+        if (!pick.length) return;
+        const words = [];
+        pick.forEach((gi) => bk.groups[gi].w.forEach((i) => words.push(W()[i][0])));
+        mask.remove();
+        runAudioDownload(words, bk.name);
+        return;
+      }
+    });
+    refresh();
+  }
+
+  function audioProgressSheet() {
+    const mask = document.createElement('div');
+    mask.className = 'sheet-mask';
+    mask.innerHTML = `<div class="sheet">
+      <div class="grab"></div>
+      <h3 style="font-size:21px">正在下载发音…</h3>
+      <div class="sheet-sub" id="ap-sub">准备中</div>
+      <div style="height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin:16px 0 8px">
+        <i id="ap-bar" style="display:block;height:100%;width:0;background:var(--brand-grad);transition:width .2s"></i>
+      </div>
+      <div class="fb-meta">可以继续背词，别关页面就行</div>
+      <button class="btn btn-primary ghost" style="width:100%;margin-top:14px" data-ap-close="1">先关掉</button>
+    </div>`;
+    document.body.appendChild(mask);
+    mask.addEventListener('click', (e) => {
+      if (e.target === mask || e.target.closest('[data-ap-close]')) mask.remove();
+    });
+    return {
+      update(done, total) {
+        const sub = mask.querySelector('#ap-sub');
+        const bar = mask.querySelector('#ap-bar');
+        if (sub) sub.textContent = done + ' / ' + total;
+        if (bar) bar.style.width = (total ? Math.round((done / total) * 100) : 0) + '%';
+      },
+      done(msg) {
+        const h3 = mask.querySelector('h3');
+        const sub = mask.querySelector('#ap-sub');
+        if (h3) h3.textContent = '下载完成';
+        if (sub) sub.textContent = msg;
+        setTimeout(() => { if (mask.parentNode) mask.remove(); }, 1800);
+      },
+    };
+  }
+
+  async function runAudioDownload(words, bkName) {
+    const ui = audioProgressSheet();
+    const idx = audioIdx();
+    const accent = B.state.settings.accent === 'uk' ? 'uk' : 'us';
+    let ok = 0, done = 0, fail = 0;
+    try {
+      const c = await caches.open(AUDIO_CACHE);
+      for (const w of words) {
+        const u = audioUrlOf(w, accent);
+        try {
+          if (idx[u] || await c.match(u)) { ok++; idx[u] = 1; }
+          else {
+            const res = await fetch(u, { mode: 'no-cors' });
+            if (res && (res.status === 200 || res.type === 'opaque')) {
+              await c.put(u, res);
+              idx[u] = 1; ok++;
+            } else fail++;
+          }
+        } catch (e) { fail++; }
+        done++;
+        ui.update(done, words.length);
+        if (done % 10 === 0) { audioIdxSave(idx); await new Promise((r) => setTimeout(r, 120)); }
+      }
+      audioIdxSave(idx);
+    } catch (e) {
+      ui.done('出错了：' + (e && e.message));
+      return;
+    }
+    ui.done('「' + bkName + '」存下 ' + ok + ' 个词' + (fail ? '，' + fail + ' 个失败' : ''));
+    toast('离线发音：+' + ok + ' 个词');
+    render();
+  }
+
+  /* ---------------- 反馈 ---------------- */  /* ---------------- 反馈 ---------------- */
   const FB_MAIL = '2823628009@qq.com';
   const FB_REPO = 'walter-creater/bengbengbeng';
   const FB_KEY = 'bbb:feedback:v1';
@@ -6063,6 +6240,14 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
   boot();
 })();
 
+</script>
+<script>
+// 离线缓存：只有 https 或本机调试时才注册（file:// 不支持 service worker）
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('./sw.js').catch(function () {});
+  });
+}
 </script>
 </body>
 </html>
