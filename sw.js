@@ -1,15 +1,15 @@
 /* 绷绷绷单词 · 离线缓存
  * 改完代码把 VERSION 加一（bbb-v2 → bbb-v3），旧缓存会自动清掉。
  */
-const VERSION = 'bbb-v2';
+const VERSION = 'bbb-v3';
 const AUDIO_CACHE = 'bbb-audio-v1';
-const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CORE = ['./', './index.html', './data/words.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
+    // 逐个缓存：缺一个文件也不至于整个 install 失败（addAll 是原子的）
     caches.open(VERSION)
-      .then((c) => c.addAll(CORE))
-      .catch(() => {})
+      .then((c) => Promise.all(CORE.map((u) => c.add(u).catch(() => {}))))
       .then(() => self.skipWaiting())
   );
 });
