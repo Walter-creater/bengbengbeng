@@ -878,6 +878,8 @@ a { color: inherit; text-decoration: none; }
 .qz-fb { margin-top: 14px; }
 .qz-fb-def { font-size: 13px; line-height: 1.75; color: var(--ink-2); margin-bottom: 9px; }
 .qz-fb .peek { margin: 0 0 8px; }
+.qz-fb-ex { font-size: 12px; line-height: 1.7; color: var(--sub); margin: -2px 0 10px; }
+.qz-fb-ex i { display: block; font-style: normal; color: var(--faint); font-size: 11.5px; }
 
 /* 离线发音选择 */
 .ap-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
@@ -1328,6 +1330,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     syncedRev: -1,
     lastSync: 0,
     longLast: 0,        // 上次「回顾旧词」的时间戳
+    weak: null,         // { d: 'YYYY-MM-DD', w: [词] } 今天没过关的词
   };
 
   /* ---------- 加载 / 保存 ---------- */
@@ -1359,6 +1362,9 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       state.syncedRev = typeof d.syncedRev === 'number' ? d.syncedRev : 0;
       state.lastSync = d.lastSync || 0;
       state.longLast = Number(d.longLast) || 0;
+      state.weak = d.weak && typeof d.weak === 'object' && Array.isArray(d.weak.w)
+        ? { d: String(d.weak.d || ''), w: d.weak.w.filter((x) => typeof x === 'string').slice(0, 300) }
+        : null;
       state.v = V;
     } catch (e) { }
   }
@@ -1446,6 +1452,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       syncedRev: state.syncedRev,
       lastSync: state.lastSync,
       longLast: state.longLast,
+      weak: state.weak,
     };
   }
 
@@ -1841,6 +1848,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     state.lastSession = null;
     state.pending = null;
     state.longLast = 0;
+    state.weak = null;
     dueAllCache = { t: 0, v: [] };
     touch();
     lastSnapDay = dayKey();   // 清空后别把空状态存成当日快照
@@ -2033,7 +2041,17 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     if (!w || !recOf(w)) return;
     const c = ensureCard(w);
     c.x = Math.min(99, (c.x || 0) + 1);
+    // 记下今天没过关的词，晚上可以再来一遍
+    const k = dayKey();
+    if (!state.weak || state.weak.d !== k) state.weak = { d: k, w: [] };
+    if (state.weak.w.indexOf(w) < 0 && state.weak.w.length < 300) state.weak.w.push(w);
     touch();
+  }
+
+  function todayWeak() {
+    const k = dayKey();
+    if (!state.weak || state.weak.d !== k) return [];
+    return state.weak.w.filter((w) => !!recOf(w));
   }
 
   function starredWords() {
@@ -2106,7 +2124,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     setPending, clearPending,
     encode, decode, mergeRemote, markSynced, needsSync, slimWords,
     star, isStarred, starredWords, wrongWords, markWrong,
-    longCandidates, longDue, markLongReview, clampSettings,
+    longCandidates, longDue, markLongReview, clampSettings, todayWeak,
     makeSnapshot, listSnapshots, restoreSnapshot,
   };
 })();
@@ -2759,6 +2777,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     const exam = B.examInfo();
     const pending = B.state.pending;
     const longN = B.longDue().length;
+    const weakN = B.todayWeak().length;
 
     const tomorrow = countDueWithin(86400000);
     const later = countDueWithin(86400000 * 2) - tomorrow;
@@ -2824,6 +2843,15 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
              <button class="btn btn-primary ghost" data-act="books">去选下一组 List</button>`}
         ${dueAll > dueToday ? `<div class="task-note">今日复习上限 ${st.dailyReview} 个，还有 ${dueAll - dueToday} 个排到后面（可在设置里调整）</div>` : ''}
       </div>
+
+      ${weakN >= 3 ? `<div class="card tight resume-card" data-act="weak" style="border-color:var(--amber-soft)">
+        <div class="resume-ic" style="background:var(--amber-soft);color:var(--amber)">↻</div>
+        <div class="lc-body">
+          <div class="lc-t">今天有 ${weakN} 个词没过关</div>
+          <div class="lc-s">趁还没忘，睡前再过一遍最划算</div>
+        </div>
+        <span class="resume-go">再过一遍</span>
+      </div>` : ''}
 
       ${longN ? `<div class="card tight resume-card" data-act="long">
         <div class="resume-ic">↺</div>
@@ -3658,10 +3686,18 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     return miss <= 1 ? 1 : 2;
   }
 
+  // 复习出题不再固定轮换：越熟的词越要求「产出」（中译英、默写），
+  // 反复忘的词直接上默写，避免四选一带来的「假会」
   function qzType() {
     const q = S.quiz;
     if (q.kind === 'drill') return ['en2cn', 'cn2en', 'spell'][q.round] || 'en2cn';
-    return ['en2cn', 'cn2en', 'listen'][q.idx % 3];
+    const w = q.queue[q.idx];
+    const c = w ? B.state.words[w] : null;
+    if (!c || c.st === 0) return 'en2cn';
+    if ((c.l || 0) >= 4) return 'spell';
+    if (c.st === 1) return q.idx % 2 ? 'cn2en' : 'en2cn';
+    if (c.st === 2) return ['cn2en', 'listen', 'spell'][q.idx % 3];
+    return q.idx % 2 ? 'spell' : 'cn2en';
   }
 
   // 每题只生成一次选项，避免重绘时顺序乱跳
@@ -3953,6 +3989,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         ${card}
         ${fb ? `<div class="qz-fb">
           <div class="qz-fb-def">${esc(defText(cur.r))}</div>
+          ${cur.r[5] ? `<div class="qz-fb-ex">${esc(cur.r[5])}${cur.r[6] ? '<i>' + esc(cur.r[6]) + '</i>' : ''}</div>` : ''}
           <div class="peek" data-noflip>
             <button class="peek-btn ${S.panel === 'ety' ? 'on' : ''}" data-panel="ety">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5c0-1 .8-1.5 2-1.5h12c1.2 0 2 .5 2 1.5v11c0 1-.8 1.5-2 1.5H6c-1.2 0-2-.5-2-1.5Z"/><path d="M8 9h8M8 13h5"/></svg>
@@ -4960,6 +4997,12 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         const sw = actEl.getAttribute('data-word');
         toast(B.star(sw) ? '已加入生词本' : '已移出生词本');
         render();
+        return;
+      }
+      if (act === 'weak') {
+        const list = B.todayWeak();
+        if (!list.length) { toast('今天没有需要重来的词'); return; }
+        startReviewQuiz(list.slice(0, 60), { book: B.state.settings.book, title: '今日薄弱词' });
         return;
       }
       if (act === 'long') { startLongReview(); return; }
