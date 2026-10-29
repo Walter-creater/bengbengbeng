@@ -1597,7 +1597,13 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
 
   function recOf(word) {
     if (!wordIndex) buildIndex();
-    return wordIndex.get(word) || null;
+    let r = wordIndex.get(word);
+    // 自制词书会在运行中往词库里追加词条，索引是懒建的，这里补一次
+    if (!r && wordIndex.size !== WORDS().length) {
+      buildIndex();
+      r = wordIndex.get(word);
+    }
+    return r || null;
   }
 
   // 每个词书展平后的索引数组，只算一次
@@ -1893,6 +1899,28 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
    * 把远端快照并入本地。返回 { changed, words, logs, sessions }
    * 语义：逐条取更「新」的，绝不整体覆盖本地进度。
    */
+  // 导入别人文件时，把设置夹回合理范围，避免被写成离谱的值
+  function clampSettings(s) {
+    const num = (v, lo, hi, dflt) => {
+      const n = Number(v);
+      if (!isFinite(n)) return dflt;
+      return Math.min(hi, Math.max(lo, n));
+    };
+    s.dailyNew = Math.round(num(s.dailyNew, 5, 200, 20));
+    s.dailyReview = Math.round(num(s.dailyReview, 0, 1000, 100));
+    s.sessionSize = Math.round(num(s.sessionSize, 0, 200, 20));
+    s.longEvery = Math.round(num(s.longEvery, 1, 365, 14));
+    s.longSize = Math.round(num(s.longSize, 1, 100, 20));
+    s.cardScale = num(s.cardScale, 0.8, 1.6, 1);
+    if (['read', 'listen', 'spell'].indexOf(s.mode) < 0) s.mode = 'read';
+    if (['us', 'uk'].indexOf(s.accent) < 0) s.accent = 'us';
+    if (['off', 'after', 'always'].indexOf(s.autoAudio) < 0) s.autoAudio = 'after';
+    if (['book', 'random'].indexOf(s.order) < 0) s.order = 'book';
+    if (typeof s.examDate !== 'string' || (s.examDate && !/^\d{4}-\d{2}-\d{2}$/.test(s.examDate))) s.examDate = '';
+    if (!BOOKS().some((b) => b.code === s.book)) s.book = (BOOKS()[0] || {}).code || 'sat';
+    return s;
+  }
+
   function mergeRemote(remote) {
     if (!remote || typeof remote !== 'object') return { changed: false };
     let changed = false, nWords = 0, nLogs = 0, nSess = 0;
@@ -1940,7 +1968,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         state.settings[k] = v;
       });
       state.settings.theme = keepTheme;
-      if (['off', 'after', 'always'].indexOf(state.settings.autoAudio) < 0) state.settings.autoAudio = 'after';
+      clampSettings(state.settings);
     }
 
     if (!state.lastList && remote.lastList && typeof remote.lastList === 'object') {
@@ -2068,7 +2096,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     setPending, clearPending,
     encode, decode, mergeRemote, markSynced, needsSync, slimWords,
     star, isStarred, starredWords, wrongWords, markWrong,
-    longCandidates, longDue, markLongReview,
+    longCandidates, longDue, markLongReview, clampSettings,
     makeSnapshot, listSnapshots, restoreSnapshot,
   };
 })();
@@ -5522,6 +5550,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       const ids = [];
       (mb.words || []).forEach((rec) => {
         if (!rec || !rec[0]) return;
+        if (Array.isArray(rec[3]) && rec[3].length && String(rec[3][0]).length > 40) rec[3] = [String(rec[3][0]).slice(0, 40)];
         const key = mbNorm(rec[0]);
         let i = idx.get(key);
         if (i === undefined) { i = WD.length; WD.push(rec); idx.set(key, i); }
@@ -5532,7 +5561,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       for (let i = 0; i < ids.length; i += 40) {
         groups.push({ t: 'List ' + (groups.length + 1), lv: '我的', w: ids.slice(i, i + 40) });
       }
-      BK.push({ code: mb.code, name: mb.name, sub: '自制词书 · ' + ids.length + ' 词', groups: groups, mine: true });
+      BK.push({ code: mb.code, name: String(mb.name || '我的词书').slice(0, 20), sub: '自制词书 · ' + ids.length + ' 词', groups: groups, mine: true });
     });
   }
 
@@ -5578,7 +5607,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         || raw.match(/^([A-Za-z][A-Za-z'\u2019\-]{1,30})\s+([\s\S]+)$/);
       if (m && /[\u4e00-\u9fa5]/.test(m[2])) {
         const w = mbNorm(m[1]);
-        if (w && !out.has(w)) out.set(w, m[2].trim());
+        if (w && !out.has(w)) out.set(w, m[2].trim().slice(0, 40));
         return;
       }
       const toks = raw.match(/[A-Za-z][A-Za-z'\u2019\-]{1,30}/g) || [];
@@ -5692,7 +5721,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
           const v = (inp.value || '').trim();
           if (!v) return;
           const rec = B.recOf(w);
-          if (rec) { rec[3] = [v]; const ex = rec[8]; if (ex && ex.todo) delete ex.todo; }
+          if (rec) { rec[3] = [v.slice(0, 40)]; const ex = rec[8]; if (ex && ex.todo) delete ex.todo; }
         });
         const all = loadMyBooks();
         const target = all.filter((x) => x.code === code)[0];
@@ -5702,6 +5731,19 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
             const rec = B.recOf(w[0]);
             if (rec && rec[3] && rec[3].length) w[3] = rec[3];
           });
+          // 词全删光了：这本词书直接移除，别留一个 0 词的空壳
+          if (!target.words.length) {
+            saveMyBooks(all.filter((x) => x.code !== code));
+            const arr = window.BBB_BOOKS || [];
+            for (let i = arr.length - 1; i >= 0; i--) if (arr[i].code === code) arr.splice(i, 1);
+            if (B.state.settings.book === code) B.state.settings.book = (arr[0] || {}).code || 'sat';
+            PK.book = B.state.settings.book;
+            B.touch(); B.save();
+            mask.remove();
+            render();
+            toast('词都删光了，这本词书已移除');
+            return;
+          }
           saveMyBooks(all);
           rebuildMyBook(code);
         }
