@@ -3701,7 +3701,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
   }
 
   /* ================= 精学抽查（10 词一组 · 四轮）与复习四选一 ================= */
-  const QZ_NAME = { en2cn: '英 → 中', cn2en: '中 → 英', spell: '看义拼写', listen: '听音选义', read: '看一遍' };
+  const QZ_NAME = { en2cn: '英 → 中', cn2en: '中 → 英', spell: '看义拼写', listen: '听音选义', read: '过一遍' };
   const QZ_TIP = {
     en2cn: '选出这个词的中文释义',
     cn2en: '选出对应的英文单词',
@@ -3840,7 +3840,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     opts = opts || {};
     S.quiz = {
       kind: kind, groups: groups, gi: 0, round: 0, idx: 0, queue: [], cur: null, fb: null,
-      wrong: {}, ask: {}, typed: '', checked: false, ok: false, near: false, pool: null, sum: null,
+      wrong: {}, ask: {}, preview: {}, typed: '', checked: false, ok: false, near: false, pool: null, sum: null,
       chain: opts.chain && opts.chain.length ? opts.chain.slice() : null,
       book: opts.book || B.state.settings.book,
       gi0: opts.gi === undefined ? -1 : opts.gi,
@@ -3952,11 +3952,13 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     render();
   }
 
-  // 第一轮「看一遍」：先把这组词过一遍眼，不判题、不计错
-  function qzPass() {
+  // 第一轮「过一遍」：翻面后自评一档记下来；最终评分取「自评」和「抽查表现」里更差的那个
+  function qzPreviewRate(qv) {
     const q = S.quiz;
-    if (!q) return;
-    q.fb = null; q.cur = null; q.idx++;
+    if (!q || !q.cur) return;
+    q.preview = q.preview || {};
+    q.preview[q.cur.word] = qv;
+    q.cur = null; q.idx++;
     if (q.idx >= q.queue.length) { qzEndRound(); return; }
     render();
   }
@@ -3984,9 +3986,11 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     words.forEach((w) => {
       if (q.graded && q.graded[w]) return;  // 复习模式已当场结算
       const err = q.wrong[w] || 0;
+      const byErr = err === 0 ? 2 : err === 1 ? 1 : 0;
+      const pv = q.preview && q.preview[w] !== undefined ? q.preview[w] : null;
       const card = B.card(w);
       const wasNew = !card || card.st === 0;
-      B.grade(w, err === 0 ? 2 : err === 1 ? 1 : 0);
+      B.grade(w, pv === null ? byErr : Math.min(pv, byErr));
       if (wasNew) q.stat.fresh++;
       else q.stat.reviewed++;
     });
@@ -4054,7 +4058,30 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     const qExtra = (cur.r && cur.r[8]) || {};
 
     let card = '';
-    if (cur.type === 'read') {
+    if (cur.type === 'read' && !cur.flipped) {
+      // 第一轮：只看词，翻面才知道意思
+      card = `<div class="qz-card qz-read" data-preview-flip="1">
+        <div class="qz-tag">${roundName}</div>
+        <div class="qz-prompt">${esc(cur.word)}</div>
+        <div class="qz-sub">${cur.r[1] ? `<span>/ ${esc(cur.r[1])} /</span>` : ''}
+          <button class="spk" data-say="${accent}" data-word="${esc(cur.word)}" title="发音">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a8.5 8.5 0 0 1 0 12"/></svg>
+          </button>
+        </div>
+        <div class="peek" data-noflip style="margin-top:16px">
+          <button class="peek-btn ${S.panel === 'ety' ? 'on' : ''}" data-panel="ety">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5c0-1 .8-1.5 2-1.5h12c1.2 0 2 .5 2 1.5v11c0 1-.8 1.5-2 1.5H6c-1.2 0-2-.5-2-1.5Z"/><path d="M8 9h8M8 13h5"/></svg>
+            由来
+          </button>
+          <button class="peek-btn ${S.panel === 'root' ? 'on' : ''}" data-panel="root">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21v-6"/><path d="M12 15c0-4-3-6-6-6 0 4 3 6 6 6Z"/><path d="M12 15c0-4 3-6 6-6 0 4-3 6-6 6Z"/></svg>
+            词根
+          </button>
+        </div>
+        ${S.panel ? renderPanel(cur.r, qExtra) : ''}
+        <button class="reveal-btn" data-preview-flip="1" style="margin-top:22px">点击显示释义 · 空格</button>
+      </div>`;
+    } else if (cur.type === 'read') {
       const rd = splitDefs(cur.r[3]).map((d) =>
         `<div class="d">${d.pos ? `<span class="pos">${esc(d.pos)}</span>` : ''}<span>${esc(d.text)}</span></div>`).join('');
       const ex = cur.r[5]
@@ -4085,6 +4112,17 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         <div class="defs">${rd}</div>
         ${ex}
         ${extraRows ? `<div class="qz-extra">${extraRows}</div>` : ''}
+        <div class="peek" data-noflip style="margin-top:16px">
+          <button class="peek-btn ${S.panel === 'ety' ? 'on' : ''}" data-panel="ety">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5c0-1 .8-1.5 2-1.5h12c1.2 0 2 .5 2 1.5v11c0 1-.8 1.5-2 1.5H6c-1.2 0-2-.5-2-1.5Z"/><path d="M8 9h8M8 13h5"/></svg>
+            由来
+          </button>
+          <button class="peek-btn ${S.panel === 'root' ? 'on' : ''}" data-panel="root">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21v-6"/><path d="M12 15c0-4-3-6-6-6 0 4 3 6 6 6Z"/><path d="M12 15c0-4 3-6 6-6 0 4-3 6-6 6Z"/></svg>
+            词根
+          </button>
+        </div>
+        ${S.panel ? renderPanel(cur.r, qExtra) : ''}
       </div>`;
     } else if (cur.type === 'spell') {
       card = `<div class="qz-card">
@@ -4126,7 +4164,13 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     }
 
     const footer = cur.type === 'read'
-      ? '<button class="btn btn-primary" data-act="qz-pass" style="margin-top:14px">看完了，下一个 · Enter</button>'
+      ? (cur.flipped
+        ? `<div class="rate">
+             <button class="again" data-preview-q="0">忘记<small>${B.predict(cur.word, 0)}</small></button>
+             <button class="hard" data-preview-q="1">模糊<small>${B.predict(cur.word, 1)}</small></button>
+             <button class="good" data-preview-q="2">认识<small>${B.predict(cur.word, 2)}</small></button>
+           </div>`
+        : '<div class="kbd-hint">点卡片或按 <kbd>空格</kbd> 显示释义</div>')
       : fb
       ? `<button class="btn btn-primary" data-act="qz-next" style="margin-top:14px">继续 · Enter</button>`
       : (cur.type === 'spell'
@@ -5116,6 +5160,17 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       return;
     }
 
+    const pvFlip = t.closest('[data-preview-flip]');
+    if (pvFlip && S.quiz && S.quiz.cur && S.quiz.cur.type === 'read' && !S.quiz.cur.flipped) {
+      S.quiz.cur.flipped = true;
+      render();
+      if (B.state.settings.autoAudio === 'after') AUD.play(S.quiz.cur.word, B.state.settings.accent === 'uk' ? 'uk' : 'us');
+      return;
+    }
+
+    const pvQ = t.closest('[data-preview-q]');
+    if (pvQ && S.quiz) { qzPreviewRate(parseInt(pvQ.getAttribute('data-preview-q'), 10)); return; }
+
     const qk = t.closest('[data-quick]');
     if (qk) {
       const raw = qk.getAttribute('data-quick');
@@ -5431,7 +5486,13 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         return;
       }
       if (S.quiz.cur && S.quiz.cur.type === 'read') {
-        if (e.key === 'Enter' || e.code === 'Space') { e.preventDefault(); qzPass(); }
+        const c = S.quiz.cur;
+        if (!c.flipped) {
+          if (e.key === 'Enter' || e.code === 'Space') { e.preventDefault(); c.flipped = true; render(); }
+        } else if (e.key === '1' || e.key === '2' || e.key === '3') {
+          e.preventDefault();
+          qzPreviewRate(parseInt(e.key, 10) - 1);
+        }
         return;
       }
       if (S.quiz.fb) {
