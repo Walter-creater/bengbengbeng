@@ -286,6 +286,8 @@ a { color: inherit; text-decoration: none; }
 .curve-cap b { color: var(--sub); font-weight: 600; }
 .seg-mini.sm { padding: 2px; border-radius: 9px; }
 .seg-mini.sm button { height: 24px; min-width: 30px; padding: 0 9px; font-size: 11.5px; }
+.seg-mini button.cust { flex: 1 0 100%; height: 26px; color: var(--faint); font-weight: 500; font-size: 11.5px; }
+.seg-mini button.cust.on { color: var(--brand); font-weight: 600; }
 .qz-read .defs { margin-top: 14px; }
 .qz-extra {
   margin-top: 16px; padding-top: 13px;
@@ -2682,6 +2684,19 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
   }
 
   // 一组里挑多少个：预设之外再加「自定义」
+  // 设置页的「预设 + 自定义」：自定义就作为最后一个 chip，跟其他选项排在一起
+  function segCustom(list, cur, attr) {
+    const presets = list.map((x) => (Array.isArray(x) ? x[0] : x)).map(Number);
+    const isCustom = presets.indexOf(Number(cur)) < 0;
+    const chips = list.map((x) => {
+      const k = Array.isArray(x) ? x[0] : x;
+      const n = Array.isArray(x) ? x[1] : x;
+      return `<button data-${attr}="${k}" class="${String(cur) === String(k) ? 'on' : ''}">${n}</button>`;
+    }).join('');
+    const cchip = `<button data-${attr}-custom="1" class="cust ${isCustom ? 'on' : ''}">${isCustom ? '自定义 · ' + cur : '自定义…'}</button>`;
+    return `<div class="seg-mini">${chips}${cchip}</div>`;
+  }
+
   function sizeChip(n, cur, attr) {
     const label = n === 0 ? '全部' : n;
     return `<button data-${attr}="${n}" class="opt ${String(cur) === String(n) ? 'on' : ''}">${label}</button>`;
@@ -3338,7 +3353,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         ${willDo ? '开始背 ' + willDo + ' 个词' : '这一组都学完了'}
       </button>
       ${st.due ? `<button class="btn btn-primary ghost" style="width:100%;margin-top:10px" data-review-list="${gi}">只复习这一组的 ${st.due} 个到期词</button>` : ''}
-      <div class="sheet-note">${(B.state.settings.drillNew && remaining >= 2) ? '新模式：新词按 10 个一组：先看一遍，再抽查 3 轮（英→中 / 中→英 / 拼写）' : '背完后这些词会在明天自动进入复习'}</div>
+      <div class="sheet-note">${(B.state.settings.drillNew && remaining >= 2) ? '新模式：新词按 10 个一组，共 4 轮：先看一遍 → 英→中 → 中→英 → 拼写' : '背完后这些词会在明天自动进入复习'}</div>
     </div>`;
 
     document.body.appendChild(mask);
@@ -3962,7 +3977,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     qzFinish();
   }
 
-  // 一组的三轮全部过关后，按错误次数折算记忆曲线评分
+  // 一组四轮全部过关后，按错误次数折算记忆曲线评分
   function qzGradeGroup() {
     const q = S.quiz;
     const words = q.groups[q.gi] || [];
@@ -4490,11 +4505,11 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         </div>
         <div class="row">
           <div><div class="r-lb">每天新词</div><div class="r-sub">今日任务的新词上限</div></div>
-          <div class="seg-mini">${seg([10, 20, 30, 50, 80], st.dailyNew, 'new')}</div>
+          ${segCustom([10, 20, 30, 50, 80], st.dailyNew, 'new')}
         </div>
         <div class="row">
           <div><div class="r-lb">每天复习上限</div><div class="r-sub">超出的词自动顺延到明天</div></div>
-          <div class="seg-mini">${seg([[50, '50'], [100, '100'], [200, '200'], [0, '不限']], st.dailyReview, 'review')}</div>
+          ${segCustom([[50, '50'], [100, '100'], [200, '200'], [0, '不限']], st.dailyReview, 'review')}
         </div>
         <div class="row">
           <div><div class="r-lb">定期回顾旧词</div><div class="r-sub">隔一段时间，把很久以前学过、已经排到未来的词再捞出来过一遍，防止忘干净</div></div>
@@ -4544,7 +4559,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         </div>
         <div class="row">
           <div><div class="r-lb">默认每组词数</div><div class="r-sub">选 List 弹窗里的默认值</div></div>
-          <div class="seg-mini">${seg([[10, '10'], [20, '20'], [30, '30'], [50, '50'], [0, '全部']], st.sessionSize, 'size')}</div>
+          ${segCustom([[10, '10'], [20, '20'], [30, '30'], [50, '50'], [0, '全部']], st.sessionSize, 'size')}
         </div>
         <div class="row">
           <div><div class="r-lb">默认顺序</div><div class="r-sub">书序或随机</div></div>
@@ -4555,7 +4570,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
           ${sw('toggle-onlynew', st.onlyNew)}
         </div>
         <div class="row">
-          <div><div class="r-lb">新词四轮抽查</div><div class="r-sub">10 词一组：先看一遍，再考 英→中 / 中→英 / 拼写</div></div>
+          <div><div class="r-lb">新词四轮抽查</div><div class="r-sub">10 词一组，4 轮：看一遍 → 英→中 → 中→英 → 拼写</div></div>
           ${sw('toggle-drill', st.drillNew)}
         </div>
         <div class="row">
@@ -5330,6 +5345,15 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     // 都当成“切换主题”吞掉，导致下面的 data-new / data-review / data-size 全部失效
     const th = t.closest('button[data-theme]');
     if (th) { B.state.settings.theme = th.getAttribute('data-theme'); B.touch(); B.save(); applyTheme(); render(); return; }
+
+    const cNew = t.closest('[data-new-custom]');
+    if (cNew) { const n = askCount(B.state.settings.dailyNew, 300); if (n) { B.state.settings.dailyNew = n; B.touch(); B.save(); render(); } return; }
+
+    const cRev = t.closest('[data-review-custom]');
+    if (cRev) { const n = askCount(B.state.settings.dailyReview || 100, 1000); if (n) { B.state.settings.dailyReview = n; B.touch(); B.save(); render(); } return; }
+
+    const cSize = t.closest('[data-size-custom]');
+    if (cSize) { const n = askCount(B.state.settings.sessionSize || 20, 300); if (n) { B.state.settings.sessionSize = n; PK.size = n; B.touch(); B.save(); render(); } return; }
 
     const nw = t.closest('[data-new]');
     if (nw) { B.state.settings.dailyNew = parseInt(nw.getAttribute('data-new'), 10); B.touch(); B.save(); render(); return; }
