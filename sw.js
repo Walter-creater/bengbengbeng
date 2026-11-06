@@ -1,9 +1,18 @@
 /* 绷绷绷单词 · 离线缓存
- * 改完代码把 VERSION 加一（bbb-v2 → bbb-v3），旧缓存会自动清掉。
+ * 改完代码把 VERSION 加一（bbb-v25 → bbb-v26），旧缓存会自动清掉。
  */
-const VERSION = 'bbb-v3';
+const VERSION = 'bbb-v26';
 const AUDIO_CACHE = 'bbb-audio-v1';
+// 发音缓存上限：每条约 10~30KB，600 条大约 6~18MB，超出后把最早存进来的清掉
+const AUDIO_MAX = 600;
 const CORE = ['./', './index.html', './data/words.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+
+function trimAudio(c) {
+  return c.keys().then((keys) => {
+    if (keys.length <= AUDIO_MAX) return null;
+    return Promise.all(keys.slice(0, keys.length - AUDIO_MAX).map((k) => c.delete(k)));
+  }).catch(() => {});
+}
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -36,7 +45,7 @@ self.addEventListener('fetch', (e) => {
         if (hit) return hit;
         return fetch(req).then((res) => {
           if (res && (res.status === 200 || res.type === 'opaque')) {
-            c.put(req, res.clone()).catch(() => {});
+            c.put(req, res.clone()).then(() => trimAudio(c)).catch(() => {});
           }
           return res;
         });
