@@ -317,6 +317,13 @@ a { color: inherit; text-decoration: none; }
 .quick-chips button small { font-size: 10.5px; color: var(--faint); font-weight: 500; }
 
 /* 今日任务：临时改本次数量（只影响这一次，不动每日目标） */
+.task-src {
+  display: flex; align-items: baseline; gap: 4px 12px; flex-wrap: wrap;
+  margin-top: 10px; font-size: 11.5px; color: var(--faint); line-height: 1.6;
+}
+.task-src b { color: var(--brand); font-weight: 600; }
+.task-src .ts-dim { color: var(--faint); }
+.task-src .ts-item { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
 .count-row { display: flex; align-items: center; gap: 7px; margin-top: 11px; }
 .count-row > span { font-size: 11.5px; color: var(--faint); margin-right: 1px; }
 .count-chip {
@@ -325,6 +332,8 @@ a { color: inherit; text-decoration: none; }
   font-size: 12px; font-weight: 600; color: var(--sub);
   transition: transform .12s var(--spring), color .15s, border-color .15s;
 }
+.count-chip { white-space: nowrap; }
+.count-chip.cust { flex: 0 0 auto; padding: 0 9px; color: var(--brand); border-color: rgba(76, 95, 213, .3); background: var(--brand-soft); }
 .count-chip:hover { color: var(--brand); border-color: var(--brand); }
 .count-chip:active { transform: scale(.95); }
 
@@ -892,6 +901,12 @@ a { color: inherit; text-decoration: none; }
 
 /* 抽查答完后：释义 + 由来/词根 */
 .qz-fb { margin-top: 14px; }
+.qz-fb-word {
+  display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  font-family: var(--serif); font-size: 25px; font-weight: 600;
+  color: var(--ink); line-height: 1.2; margin-bottom: 7px;
+}
+.qz-fb-word span { font-family: var(--ui); font-size: 12px; font-weight: 400; color: var(--sub); }
 .qz-fb-def { font-size: 13px; line-height: 1.75; color: var(--ink-2); margin-bottom: 9px; }
 .qz-fb .peek { margin: 0 0 8px; }
 .qz-fb-ex { font-size: 12px; line-height: 1.7; color: var(--sub); margin: -2px 0 10px; }
@@ -2707,6 +2722,42 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     return `<button data-${attr}="custom" class="opt wide ${isCustom ? 'on' : ''}">${isCustom ? '自定义 · ' + cur : '自定义…'}</button>`;
   }
 
+  // 今日新词落在书上的哪些 List 里
+  function newWordsRange(n, code) {
+    const idxs = B.bookWordIdx(code || B.state.settings.book);
+    const words = W();                       // 注意：不能叫 W，否则遮蔽了外层的 W() 取词函数
+    const book = B.book(code || B.state.settings.book);
+    if (!book || !idxs.length) return null;
+    const pos = new Map();
+    book.groups.forEach((g, gi) => g.w.forEach((i) => pos.set(i, gi)));
+    const hit = new Set();
+    let first = null, last = null;
+    for (let k = 0; k < idxs.length && hit.size < n; k++) {
+      const w = words[idxs[k]][0];
+      const c = B.state.words[w];
+      if (c && c.st !== 0) continue;
+      hit.add(idxs[k]);
+      const gi = pos.get(idxs[k]);
+      if (gi === undefined) continue;
+      if (first === null || gi < first) first = gi;
+      if (last === null || gi > last) last = gi;
+    }
+    if (first === null) return null;
+    // 每个 List 各自还剩多少没背
+    const items = [];
+    for (let gi = first; gi <= last; gi++) {
+      const g = book.groups[gi];
+      if (!g) continue;
+      let l = 0;
+      for (let t = 0; t < g.w.length; t++) {
+        const c = B.state.words[words[g.w[t]][0]];
+        if (!c || c.st === 0) l++;
+      }
+      items.push({ t: g.t, left: l, total: g.w.length });
+    }
+    return { first: first, last: last, n: hit.size, items: items };
+  }
+
   function startQuick(n) {
     if (!n || n < 1) return;
     const st = B.state.settings;
@@ -2858,6 +2909,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
     const later = countDueWithin(86400000 * 2) - tomorrow;
 
     const ready = dueToday + newLeft;
+    const newRange = newLeft > 0 ? newWordsRange(newLeft) : null;
     const mem = memoryProjection();
     const ls = B.state.lastList;
     const lastG = ls ? B.group(ls.book, ls.gi) : null;
@@ -2910,9 +2962,14 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
           <div class="metric"><div class="num">${c.mature}</div><div class="lb">已掌握</div></div>
         </div>
         <div class="bar"><i style="width:${pct(tc.newDone, st.dailyNew)}%"></i></div>
+        ${newRange && newLeft > 0 ? `<div class="task-src">
+          <span>新词来自</span>
+          ${newRange.items.slice(0, 4).map((it) => `<span class="ts-item"><b>${esc(it.t)}</b><span class="ts-dim">剩 ${it.left}/${it.total}</span></span>`).join('')}
+          ${newRange.items.length > 4 ? `<span class="ts-dim">等 ${newRange.items.length} 个 List</span>` : ''}
+        </div>` : ''}
         ${ready > 0
         ? `<button class="btn btn-primary" data-act="daily">${dueToday ? '开始复习 ' + dueToday + ' 个 + 新词 ' + newLeft + ' 个' : '开始背新词 ' + newLeft + ' 个'}</button>
-             <div class="count-row"><span>或只背</span>${[10, 20, 50, 0].map((n) => `<button class="count-chip" data-act="daily-n" data-n="${n}">${n || '全部'}</button>`).join('')}</div>
+             <div class="count-row"><span>或只背</span>${[10, 20, 50, 0].map((n) => `<button class="count-chip" data-act="daily-n" data-n="${n}">${n || '全部'}</button>`).join('')}<button class="count-chip cust" data-act="daily-n" data-n="custom" title="自定义本次数量">自定</button></div>
              <button class="btn btn-primary ghost" style="width:100%;margin-top:10px" data-act="only-review">复习 · 可选到期 / 不熟 / 全部</button>`
         : `<div style="text-align:center;padding:6px 0 10px;color:var(--green);font-size:13.5px;font-weight:600">今天的新词和复习都清空了 🎉</div>
              <button class="btn btn-primary ghost" data-act="books">去选下一组 List</button>`}
@@ -4191,6 +4248,7 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
         </div>
         ${card}
         ${fb ? `<div class="qz-fb">
+          ${cur.type === 'listen' ? `<div class="qz-fb-word">${esc(cur.word)}${cur.r[1] ? `<span>/ ${esc(cur.r[1])} /</span>` : ''}</div>` : ''}
           <div class="qz-fb-def">${esc(defText(cur.r))}</div>
           ${cur.r[5] ? `<div class="qz-fb-ex">${esc(cur.r[5])}${cur.r[6] ? '<i>' + esc(cur.r[6]) + '</i>' : ''}</div>` : ''}
           <div class="peek" data-noflip>
@@ -5208,7 +5266,16 @@ window.BBB_BOOKS=[{"code":"sat","name":"SAT 核心词汇","sub":"美国高考核
       const act = actEl.getAttribute('data-act');
       const st = B.state.settings;
       if (act === 'daily') { startDaily(); return; }
-      if (act === 'daily-n') { startDaily(null, parseInt(actEl.getAttribute('data-n'), 10)); return; }
+      if (act === 'daily-n') {
+        const raw = actEl.getAttribute('data-n');
+        if (raw === 'custom') {
+          const n = askCount(20, 300);
+          if (n) startDaily(null, n);
+          return;
+        }
+        startDaily(null, parseInt(raw, 10));
+        return;
+      }
       if (act === 'newbook') { openImportBookSheet(); return; }
       if (act === 'fillbook') { openFillSheet(PK.book); return; }
 

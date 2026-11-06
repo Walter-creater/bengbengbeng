@@ -1,7 +1,7 @@
 /* 绷绷绷单词 · 离线缓存
- * 改完代码把 VERSION 加一（bbb-v17 → bbb-v18），旧缓存会自动清掉。
+ * 改完代码把 VERSION 加一（bbb-v25 → bbb-v26），旧缓存会自动清掉。
  */
-const VERSION = 'bbb-v18';
+const VERSION = 'bbb-v26';
 const AUDIO_CACHE = 'bbb-audio-v1';
 // 发音缓存上限：每条约 10~30KB，600 条大约 6~18MB，超出后把最早存进来的清掉
 const AUDIO_MAX = 600;
